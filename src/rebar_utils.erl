@@ -33,8 +33,9 @@
          find_files/2,
          now_str/0,
          ensure_dir/1,
-         beam_to_mod/2, beams/1,
-         erl_to_mod/1,
+         beams/1,
+         file_to_mod/1,
+         beam_to_mod/2,
          abort/2,
          escript_foldl/3,
          find_executable/1,
@@ -224,7 +225,7 @@ beam_to_mod(Dir, Filename) ->
     [Dir | Rest] = filename:split(Filename),
     list_to_atom(filename:basename(string:join(Rest, "."), ".beam")).
 
-erl_to_mod(Filename) ->
+file_to_mod(Filename) ->
     list_to_atom(filename:rootname(filename:basename(Filename))).
 
 beams(Dir) ->

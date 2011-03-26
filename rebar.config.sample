@@ -75,6 +75,11 @@
 %% Whether to print coverage report to console. Default is `false'
 {cover_print_enabled, false}.
 
+%% == QuickCheck ==
+
+%% If qc_lib is unspecified rebar tries to detect PropEr or EQC
+{qc_opts, [{qc_lib, atom()}, Options]}.
+
 %% == Dialyzer ==
 
 %% Options for running dialyzer

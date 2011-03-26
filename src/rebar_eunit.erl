@@ -112,7 +112,7 @@ eunit(Config, AppFile) ->
     BeamFiles = [N || N <- rebar_utils:beams(?EUNIT_DIR),
                       string:str(N, "_tests.beam") =:= 0],
     Modules = [rebar_utils:beam_to_mod(?EUNIT_DIR, N) || N <- BeamFiles],
-    SrcModules = [rebar_utils:erl_to_mod(M) || M <- SrcErls],
+    SrcModules = [rebar_utils:file_to_mod(M) || M <- SrcErls],
 
     cover_init(Config, BeamFiles),
     EunitResult = perform_eunit(Config, Modules),
