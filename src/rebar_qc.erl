@@ -39,13 +39,13 @@ qc(Config, _AppFile) ->
     QCOpts = rebar_config:get(Config, qc_opts, []),
     QC = select_qc_lib(QCOpts),
     ?DEBUG("Selected QC library: ~p~n", [QC]),
-    run(QC, QCOpts -- [{qc, QC}]).
+    run(Config, QC, QCOpts -- [{qc, QC}]).
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
--define(EUNIT_DIR, ".eunit").
+-define(QC_DIR, ".qc").
 
 select_qc_lib(QCOpts) ->
     case proplists:get_value(qc_lib, QCOpts) of
@@ -73,20 +73,88 @@ detect_qc_lib() ->
             end
     end.
 
-run(QC, QCOpts) ->
+setup_codepath() ->
+    CodePath = code:get_path(),
+    true = code:add_patha(qc_dir()),
+    true = code:add_patha(ebin_dir()),
+    CodePath.
+
+run(Config, QC, QCOpts) ->
     ?DEBUG("QC Options: ~p~n", [QCOpts]),
-    true = code:add_patha(?EUNIT_DIR),
+
+    ok = filelib:ensure_dir(?QC_DIR ++ "/foo"),
+    CodePath = setup_codepath(),
+    ok = qc_compile(Config),
     case [QC:module(QCOpts, M) || M <- find_prop_mods()] of
         [] ->
+            true = code:set_path(CodePath),
             ok;
         Errors ->
             ?ABORT("~p~n", [hd(Errors)])
     end.
 
 find_prop_mods() ->
-    Beams = rebar_utils:find_files(?EUNIT_DIR, ".*\\.beam\$"),
+    Beams = rebar_utils:find_files(?QC_DIR, ".*\\.beam\$"),
     [M || M <- [rebar_utils:file_to_mod(Beam) || Beam <- Beams], has_prop(M)].
 
 has_prop(Mod) ->
     lists:any(fun({F,_A}) -> lists:prefix("prop_", atom_to_list(F)) end,
               Mod:module_info(exports)).
+
+qc_compile(Config) ->
+    %% Obtain all the test modules for inclusion in the compile stage.
+    %% Notice: this could also be achieved with the following
+    %% rebar.config option: {qc_compile_opts, [{src_dirs, ["test"]}]}
+    TestErls = rebar_utils:find_files("test", ".*\\.erl\$"),
+
+    %% Compile erlang code to ?QC_DIR, using a tweaked config
+    %% with appropriate defines, and include all the test modules
+    %% as well.
+    rebar_erlc_compiler:doterl_compile(qc_config(Config),
+                                       ?QC_DIR, TestErls).
+
+qc_dir() ->
+    filename:join(rebar_utils:get_cwd(), ?QC_DIR).
+
+ebin_dir() ->
+    filename:join(rebar_utils:get_cwd(), "ebin").
+
+qc_config(Config) ->
+    EqcOpts = eqc_opts(),
+    PropErOpts = proper_opts(),
+
+    ErlOpts = rebar_config:get_list(Config, erl_opts, []),
+    QCOpts = rebar_config:get_list(Config, qc_compile_opts, []),
+    Opts = [{d, 'TEST'}, debug_info] ++
+        ErlOpts ++ QCOpts ++ EqcOpts ++ PropErOpts,
+    Config1 = rebar_config:set(Config, erl_opts, Opts),
+
+    FirstErls = rebar_config:get_list(Config1, qc_first_files, []),
+    rebar_config:set(Config1, erl_first_files, FirstErls).
+
+eqc_opts() ->
+    define_if('EQC', is_lib_avail(is_eqc_avail, eqc,
+                                  "eqc.hrl", "QuickCheck")).
+
+proper_opts() ->
+    define_if('PROPER', is_lib_avail(is_proper_avail, proper,
+                                     "proper.hrl", "PropEr")).
+
+define_if(Def, true) -> [{d, Def}];
+define_if(_Def, false) -> [].
+
+is_lib_avail(DictKey, Mod, Hrl, Name) ->
+    case erlang:get(DictKey) of
+        undefined ->
+            IsAvail = case code:lib_dir(Mod, include) of
+                          {error, bad_name} ->
+                              false;
+                          Dir ->
+                              filelib:is_regular(filename:join(Dir, Hrl))
+                      end,
+            erlang:put(DictKey, IsAvail),
+            ?DEBUG("~s availability: ~p\n", [Name, IsAvail]),
+            IsAvail;
+        IsAvail ->
+            IsAvail
+    end.
